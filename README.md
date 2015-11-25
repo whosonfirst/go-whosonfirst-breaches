@@ -1,6 +1,12 @@
 # go-whosonfirst-breaches
 
-THIS IS NOT (PROBABLY) READY FOR USE YET. If you're feeling dangerous by all means, dive in!
+Determine what Who's On First documents are "breached" by another candidate Who's On First document.
+
+## Caveats
+
+This is probably not ready for any kind of use yet. For example it does not account for interior rings in either the source or candidate Who's On First documents.
+
+If you're feeling dangerous by all means, dive in!
 
 ## Example
 
