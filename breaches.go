@@ -1,10 +1,12 @@
 package breaches
 
 import (
-	rtree "github.com/whosonfirst/go-whosonfirst-rtree"
-	// polyclip "github.com/akavel/polyclip-go"
+	"errors"
+	polyclip "github.com/akavel/polyclip-go"
+	geo "github.com/kellydunn/golang-geo"
 	geojson "github.com/whosonfirst/go-whosonfirst-geojson"
 	log "github.com/whosonfirst/go-whosonfirst-log"
+	rtree "github.com/whosonfirst/go-whosonfirst-rtree"
 )
 
 type Index struct {
@@ -32,35 +34,44 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 		return nil, err
 	}
 
-	bounds := sp.Bounds()
-
-	results := idx.GetIntersectsByRect(bounds)
-	inflated := idx.InflateSpatialResults(results)
-
 	breaches := make([]*geojson.WOFSpatial, 0)
 
-	// construct Polyclip thing-y from feature here
+	results := idx.GetIntersectsByRect(sp.Bounds())
 
-	for _, r := range inflated {
+	if len(results) > 0 {
 
-		polys, err := idx.LoadPolygons(r)
+		inflated := idx.InflateSpatialResults(results)
 
-		if err != nil {
-			idx.Logger.Warning("...")
-			continue
-		}
+		// p.OuterRing
+		// p.InteriorRings
 
-		for _, p := range polys {
+		feature_polys := feature.GeomToPolygons()
 
-			idx.Logger.Debug("%v", p)
+		clipping, _ := idx.WOFPolygonToPolyclip(feature_polys.OuterRing)
 
-			// construct Polyclip thing-y from feature here
+		for _, r := range inflated {
 
-			// compare Polyclip thing-ies here
+			result_polys, err := idx.LoadPolygons(r)
 
-			// account for interior rings
+			if err != nil {
+				idx.Logger.Warning("...")
+				continue
+			}
+
+			for _, p := range result_polys {
+
+				subject, _ := idx.WOFPolygonToPolyclip(p.OuterRing)
+
+				r := subject.Construct(polyclip.INTERSECTION, clipping)
+
+				// account for interior rings
+			}
 		}
 	}
 
 	return breaches, nil
+}
+
+func (idx *Index) WOFPolygonToPolyclip(*geo.Polygon) (polyclip.Polygon, error) {
+	return nil, errors.New("please write me")
 }
