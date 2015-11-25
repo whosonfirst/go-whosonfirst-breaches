@@ -1,6 +1,7 @@
 package main
 
 import (
+       "flag"
        "fmt"
        breaches "github.com/whosonfirst/go-whosonfirst-breaches"
        log "github.com/whosonfirst/go-whosonfirst-log"
@@ -9,14 +10,21 @@ import (
 
 func main() {
 
+     flag.Parse()
+     args := flag.Args()
+
      source := "/usr/local/mapzen/whosonfirst-data/data"
 
      logger := log.NewWOFLogger("debug")
      logger.AddLogger(os.Stdout, "debug")
 
-     b := new(breaches.Index)
-     idx := b.NewIndex(source, 1024, (1024*1024*10), logger)
+     b, _ := breaches.NewIndex(source, 1024, (1024*1024*10), logger)
 
-     fmt.Printf("%v", idx)
+     fmt.Printf("%v", b)
+
+     for _, path := range args {
+          b.IndexGeoJSONFile(path)
+     }
+
 }
 
