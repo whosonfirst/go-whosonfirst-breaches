@@ -63,7 +63,7 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 				result_polys, err := idx.LoadPolygons(r)
 
-				idx.Logger.Debug("compare %d polys from candidate %d", len(result_polys), r.Id)
+				idx.Logger.Debug("Compare %d polys from candidate %d (%s)", len(result_polys), r.Id, r.Name)
 
 				if err != nil {
 					idx.Logger.Warning("Unable to load polygons for ID %d, because %v", r.Id, err)
@@ -73,8 +73,9 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 				for _, p := range result_polys {
 
 					subject, _ := idx.WOFPolygonToPolyclip(&p.OuterRing)
-
 					i := subject.Construct(polyclip.INTERSECTION, *clipping)
+
+					idx.Logger.Debug("%v", i)
 
 					if len(i) > 0 {
 						breaches = append(breaches, r)

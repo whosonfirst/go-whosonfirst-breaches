@@ -8,6 +8,8 @@ self:   prep
 
 deps:   self
 	go get -u "github.com/whosonfirst/go-whosonfirst-rtree"
+	go get -u "github.com/whosonfirst/go-whosonfirst-utils"
+	go get -u "github.com/whosonfirst/go-whosonfirst-log"
 	go get -u "github.com/akavel/polyclip-go"
 
 fmt:
