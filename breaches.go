@@ -53,6 +53,14 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 			for _, r := range inflated {
 
+				// Note the WOFID-iness of this example - please to be waiting for
+				// this to get pushed to get resolved (20151125/thisisaaronland)
+				// https://github.com/whosonfirst/go-whosonfirst-geojson/issues/2
+
+				if r.Id == feature.WOFId() {
+					continue
+				}
+
 				result_polys, err := idx.LoadPolygons(r)
 
 				idx.Logger.Debug("compare %d polys from candidate %d", len(result_polys), r.Id)
