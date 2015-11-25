@@ -37,7 +37,30 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 	results := idx.GetIntersectsByRect(bounds)
 	inflated := idx.InflateSpatialResults(results)
 
-	// do polyclip here...
+	breaches := make([]*geojson.WOFSpatial, 0)
 
-	return inflated, nil
+	// construct Polyclip thing-y from feature here
+
+	for _, r := range inflated {
+
+		polys, err := idx.LoadPolygons(r)
+
+		if err != nil {
+			idx.Logger.Warning("...")
+			continue
+		}
+
+		for _, p := range polys {
+
+			idx.Logger.Debug("%v", p)
+
+			// construct Polyclip thing-y from feature here
+
+			// compare Polyclip thing-ies here
+
+			// account for interior rings
+		}
+	}
+
+	return breaches, nil
 }
