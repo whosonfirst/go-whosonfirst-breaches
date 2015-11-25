@@ -1,7 +1,6 @@
 package breaches
 
 import (
-	"errors"
 	polyclip "github.com/akavel/polyclip-go"
 	geo "github.com/kellydunn/golang-geo"
 	geojson "github.com/whosonfirst/go-whosonfirst-geojson"
@@ -62,7 +61,7 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 				subject, _ := idx.WOFPolygonToPolyclip(p.OuterRing)
 
-				r := subject.Construct(polyclip.INTERSECTION, clipping)
+				r := subject.Construct(polyclip.INTERSECTION, *clipping)
 
 				// account for interior rings
 			}
@@ -72,6 +71,24 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 	return breaches, nil
 }
 
-func (idx *Index) WOFPolygonToPolyclip(*geo.Polygon) (polyclip.Polygon, error) {
-	return nil, errors.New("please write me")
+// sudo add me to go-whosonfirst-geojson ?
+
+func (idx *Index) WOFPolygonToPolyclip(p *geo.Polygon) (*polyclip.Polygon, error) {
+
+	poly := new(polyclip.Polygon)
+	contour := new(polyclip.Contour)
+
+	for _, _pt := range p.Points() {
+
+		pt := polyclip.Point{
+			X: _pt.Lng(),
+			Y: _pt.Lat(),
+		}
+
+		contour.Add(pt)
+	}
+
+	poly.Add(*contour)
+
+	return poly, nil
 }
