@@ -45,26 +45,36 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 		// p.InteriorRings
 
 		feature_polys := feature.GeomToPolygons()
+		idx.Logger.Debug("compare %d polys from feature", len(feature_polys))
 
-		clipping, _ := idx.WOFPolygonToPolyclip(feature_polys.OuterRing)
+		for _, feature_poly := range feature_polys {
 
-		for _, r := range inflated {
+			clipping, _ := idx.WOFPolygonToPolyclip(&feature_poly.OuterRing)
 
-			result_polys, err := idx.LoadPolygons(r)
+			for _, r := range inflated {
 
-			if err != nil {
-				idx.Logger.Warning("...")
-				continue
+				result_polys, err := idx.LoadPolygons(r)
+
+				idx.Logger.Debug("compare %d polys from candidate %d", len(result_polys), r.Id)
+
+				if err != nil {
+					idx.Logger.Warning("Unable to load polygons for ID %d, because %v", r.Id, err)
+					continue
+				}
+
+				for _, p := range result_polys {
+
+					subject, _ := idx.WOFPolygonToPolyclip(&p.OuterRing)
+
+					i := subject.Construct(polyclip.INTERSECTION, *clipping)
+
+					if len(i) > 0 {
+						breaches = append(breaches, r)
+						break
+					}
+				}
 			}
 
-			for _, p := range result_polys {
-
-				subject, _ := idx.WOFPolygonToPolyclip(p.OuterRing)
-
-				r := subject.Construct(polyclip.INTERSECTION, *clipping)
-
-				// account for interior rings
-			}
 		}
 	}
 

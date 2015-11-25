@@ -9,3 +9,10 @@ self:   prep
 deps:   self
 	go get -u "github.com/whosonfirst/go-whosonfirst-rtree"
 	go get -u "github.com/akavel/polyclip-go"
+
+fmt:
+	go fmt *.go
+	go fmt cmd/*.go
+
+bin:	self fmt
+	go build -o bin/wof-breaches cmd/wof-breaches.go
