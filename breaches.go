@@ -39,55 +39,75 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 	if len(results) > 0 {
 
-		inflated := idx.InflateSpatialResults(results)
-
-		// p.OuterRing
-		// p.InteriorRings
-
 		feature_polys := feature.GeomToPolygons()
 		idx.Logger.Debug("compare %d polys from feature", len(feature_polys))
 
-		for _, feature_poly := range feature_polys {
+		inflated := idx.InflateSpatialResults(results)
 
-			clipping, _ := idx.WOFPolygonToPolyclip(&feature_poly.OuterRing)
+		for _, candidate := range inflated {
 
-			for _, r := range inflated {
-
-				// Note the WOFID-iness of this example - please to be waiting for
-				// this to get pushed to get resolved (20151125/thisisaaronland)
-				// https://github.com/whosonfirst/go-whosonfirst-geojson/issues/2
-
-				if r.Id == feature.WOFId() {
-					continue
-				}
-
-				result_polys, err := idx.LoadPolygons(r)
-
-				idx.Logger.Debug("Compare %d polys from candidate %d (%s)", len(result_polys), r.Id, r.Name)
-
-				if err != nil {
-					idx.Logger.Warning("Unable to load polygons for ID %d, because %v", r.Id, err)
-					continue
-				}
-
-				for _, p := range result_polys {
-
-					subject, _ := idx.WOFPolygonToPolyclip(&p.OuterRing)
-					i := subject.Construct(polyclip.INTERSECTION, *clipping)
-
-					idx.Logger.Debug("%v", i)
-
-					if len(i) > 0 {
-						breaches = append(breaches, r)
-						break
-					}
-				}
+			if candidate.Id == feature.WOFId() {
+				continue
 			}
 
+			intersects, err := idx.Intersects(feature_polys, candidate)
+
+			if err != nil {
+				idx.Logger.Error("Failed to determine intersection, because %v", err)
+				continue
+			}
+
+			if !intersects {
+				continue
+			}
+
+			breaches = append(breaches, candidate)
 		}
 	}
 
 	return breaches, nil
+}
+
+func (idx *Index) Intersects(feature_polys []*geojson.WOFPolygon, candidate *geojson.WOFSpatial) (bool, error) {
+
+	// p.OuterRing
+	// p.InteriorRings
+
+	candidate_polys, err := idx.LoadPolygons(candidate)
+
+	if err != nil {
+		idx.Logger.Warning("Unable to load polygons for ID %d, because %v", candidate.Id, err)
+		return false, err
+	}
+
+	intersects := false
+
+	for _, feature_poly := range feature_polys {
+
+		clipping, _ := idx.WOFPolygonToPolyclip(&feature_poly.OuterRing)
+
+		for _, c := range candidate_polys {
+
+			subject, _ := idx.WOFPolygonToPolyclip(&c.OuterRing)
+			i := subject.Construct(polyclip.INTERSECTION, *clipping)
+
+			idx.Logger.Debug("%v", i)
+
+			if len(i) > 0 {
+				intersects = true
+				break
+			}
+		}
+
+		// If the candidate does intersect check to make sure that the
+		// candidate is not also contained by any of the interior rings
+
+		if intersects {
+			break
+		}
+	}
+
+	return intersects, nil
 }
 
 // sudo add me to go-whosonfirst-geojson ?
