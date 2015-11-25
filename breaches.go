@@ -24,10 +24,20 @@ func NewIndex(source string, cache_size int, cache_trigger int, logger *log.WOFL
 	return &idx, nil
 }
 
-func (idx *Index) Breaches(feature *geojson.WOFFeature) {
+func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, error) {
 
-	// do an initial rtree comparison
-	// foreach result load feature
-	// do polyclip test between feature and result feature
+	sp, err := feature.EnSpatialize()
 
+	if err != nil {
+		return nil, err
+	}
+
+	bounds := sp.Bounds()
+
+	results := idx.GetIntersectsByRect(bounds)
+	inflated := idx.InflateSpatialResults(results)
+
+	// do polyclip here...
+
+	return inflated, nil
 }
