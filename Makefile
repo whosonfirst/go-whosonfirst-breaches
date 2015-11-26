@@ -18,3 +18,4 @@ fmt:
 
 bin:	self fmt
 	go build -o bin/wof-breaches cmd/wof-breaches.go
+	go build -o bin/wof-clipping cmd/wof-clipping.go
