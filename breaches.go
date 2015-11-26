@@ -12,6 +12,11 @@ type Index struct {
 	*rtree.WOFIndex
 }
 
+type Intersection struct {
+	subject    *geojson.WOFSpatial
+	intersects bool
+}
+
 func NewIndex(source string, cache_size int, cache_trigger int, logger *log.WOFLogger) (*Index, error) {
 
 	r, err := rtree.NewIndex(source, cache_size, cache_trigger, logger)
@@ -46,7 +51,8 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 		inflated := idx.InflateSpatialResults(results)
 
-		// sudo do this concurrently
+		ch := make(chan Intersection, len(inflated))
+		pending := 0
 
 		for _, subject := range inflated {
 
@@ -54,25 +60,40 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 				continue
 			}
 
-			subject_polys, err := idx.LoadPolygons(subject)
+			go func(clipping_polys []*geojson.WOFPolygon, subject *geojson.WOFSpatial) {
 
-			if err != nil {
-				idx.Logger.Warning("Unable to load polygons for ID %d, because %v", subject.Id, err)
-				continue
+				subject_polys, err := idx.LoadPolygons(subject)
+
+				if err != nil {
+					idx.Logger.Warning("Unable to load polygons for ID %d, because %v", subject.Id, err)
+					ch <- Intersection{nil, false}
+				}
+
+				intersects, err := idx.Intersects(clipping_polys, subject_polys)
+
+				if err != nil {
+					idx.Logger.Error("Failed to determine intersection, because %v", err)
+					ch <- Intersection{nil, false}
+				}
+
+				if err != nil {
+					ch <- Intersection{nil, false}
+				}
+
+				ch <- Intersection{subject, intersects}
+
+			}(clipping_polys, subject)
+
+			pending += 1
+		}
+
+		for j := 0; j < pending; j++ {
+
+			i := <-ch
+
+			if i.intersects {
+				breaches = append(breaches, i.subject)
 			}
-
-			intersects, err := idx.Intersects(clipping_polys, subject_polys)
-
-			if err != nil {
-				idx.Logger.Error("Failed to determine intersection, because %v", err)
-				continue
-			}
-
-			if !intersects {
-				continue
-			}
-
-			breaches = append(breaches, subject)
 		}
 
 	}
