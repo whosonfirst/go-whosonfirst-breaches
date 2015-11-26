@@ -74,6 +74,7 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 			breaches = append(breaches, subject)
 		}
+
 	}
 
 	return breaches, nil
@@ -97,6 +98,8 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 		idx.Logger.Debug("TEST clipping poly %d (which has %d interior rings) against %d subject polys", c, len(clipping_poly.InteriorRings), len(subject_polys))
 
 		clipping_outer, _ := idx.WOFPolygonToPolyclip(&clipping_poly.OuterRing)
+
+		// sudo do me concurrently
 
 		for s, subject := range subject_polys {
 
@@ -180,6 +183,5 @@ func (idx *Index) WOFPolygonToPolyclip(p *geo.Polygon) (*polyclip.Polygon, error
 	}
 
 	poly.Add(*contour)
-
 	return poly, nil
 }
