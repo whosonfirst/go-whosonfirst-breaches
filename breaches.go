@@ -25,9 +25,11 @@ func NewIndex(source string, cache_size int, cache_trigger int, logger *log.WOFL
 	return &idx, nil
 }
 
+// return the list of places (subjects) that are breached by feature (clipping)
+
 func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, error) {
 
-	sp, err := feature.EnSpatialize()
+	clipping, err := feature.EnSpatialize()
 
 	if err != nil {
 		return nil, err
@@ -35,22 +37,31 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 	breaches := make([]*geojson.WOFSpatial, 0)
 
-	results := idx.GetIntersectsByRect(sp.Bounds())
+	results := idx.GetIntersectsByRect(clipping.Bounds())
 
 	if len(results) > 0 {
 
-		feature_polys := feature.GeomToPolygons()
-		idx.Logger.Debug("compare %d polys from feature", len(feature_polys))
+		clipping_polys := feature.GeomToPolygons()
+		idx.Logger.Debug("compare %d polys from feature", len(clipping_polys))
 
 		inflated := idx.InflateSpatialResults(results)
 
-		for _, candidate := range inflated {
+		// sudo do this concurrently 
 
-			if candidate.Id == feature.WOFId() {
+		for _, subject := range inflated {
+
+			if subject.Id == feature.WOFId() {
 				continue
 			}
 
-			intersects, err := idx.Intersects(feature_polys, candidate)
+			subject_polys, err := idx.LoadPolygons(subject)
+
+			if err != nil {
+				idx.Logger.Warning("Unable to load polygons for ID %d, because %v", subject.Id, err)
+				continue
+			}
+
+			intersects, err := idx.Intersects(clipping_polys, subject_polys)
 
 			if err != nil {
 				idx.Logger.Error("Failed to determine intersection, because %v", err)
@@ -61,64 +72,81 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 				continue
 			}
 
-			breaches = append(breaches, candidate)
+			breaches = append(breaches, subject)
 		}
 	}
 
 	return breaches, nil
 }
 
-func (idx *Index) Intersects(feature_polys []*geojson.WOFPolygon, candidate *geojson.WOFSpatial) (bool, error) {
+func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys []*geojson.WOFPolygon) (bool, error) {
 
-	// p.OuterRing
-	// p.InteriorRings
-
-	candidate_polys, err := idx.LoadPolygons(candidate)
-
-	if err != nil {
-		idx.Logger.Warning("Unable to load polygons for ID %d, because %v", candidate.Id, err)
-		return false, err
-	}
+     /*
+         AND (intersection) - create regions where both subject and clip polygons are filled
+    	 OR (union) - create regions where either subject or clip polygons (or both) are filled
+	 NOT (difference) - create regions where subject polygons are filled except where clip polygons are filled
+    	 XOR (exclusive or) - create regions where either subject or clip polygons are filled but not where both are filled
+    */
+     
 
 	intersects := false
 
-	for _, feature_poly := range feature_polys {
+	for c, clipping_poly := range clipping_polys {
 
-		clipping, _ := idx.WOFPolygonToPolyclip(&feature_poly.OuterRing)
+		idx.Logger.Debug("clipping poly %d has %d interior rings", c, len(clipping_poly.InteriorRings))
 
-		for _, c := range candidate_polys {
+		clipping_outer, _ := idx.WOFPolygonToPolyclip(&clipping_poly.OuterRing)
 
-			subject, _ := idx.WOFPolygonToPolyclip(&c.OuterRing)
-			i := subject.Construct(polyclip.INTERSECTION, *clipping)
+		for _, subject := range subject_polys {
 
-			idx.Logger.Debug("INTERSECTION %v", len(i))
+			idx.Logger.Debug("subject poly has %d interior rings", len(subject.InteriorRings))
 
-			if len(i) > 0 {
+			subject_outer, _ := idx.WOFPolygonToPolyclip(&subject.OuterRing)
+			intersection := subject_outer.Construct(polyclip.INTERSECTION, *clipping_outer)
+
+			idx.Logger.Debug("INTERSECTION of clipping (outer poly) and subject (outer poly) %v", len(intersection))
+
+			if len(intersection) > 0 {
 				intersects = true
 			}
+			
+			if intersects && len(clipping_poly.InteriorRings) > 0 {
 
-			// If the candidate does intersect check to make sure that the
-			// candidate is not also contained by any of the interior rings
+			   intersects = false
 
-			if intersects && len(c.InteriorRings) > 0 {
+			   for i, inner := range clipping_poly.InteriorRings {
 
-				intersects = false
+			       	    clipping_inner, _ := idx.WOFPolygonToPolyclip(&inner)
 
-				idx.Logger.Debug("TEST INTERIOR RINGS FOR CANDIDATE %d", len(c.InteriorRings))
+					xor := subject_outer.Construct(polyclip.XOR, *clipping_inner)
+					idx.Logger.Debug("XOR of clipping (inner poly %d) and subject (outer poly) %d", i, len(xor))
 
-				for _, inner := range c.InteriorRings {
-
-					inner_subject, _ := idx.WOFPolygonToPolyclip(&inner)
-
-					i := inner_subject.Construct(polyclip.INTERSECTION, *clipping)
-					idx.Logger.Debug("INTERSECTION %d", len(i))
-
-					if len(i) > 0 {
-						intersects = true
-						break
+					if len(xor) > 0 {
+					   intersects = true
 					}
-				}
+			   }
+
 			}
+
+			if intersects && len(subject.InteriorRings) > 0 {
+
+			   intersects = false
+
+			   for i, inner := range subject.InteriorRings {
+
+			       	    subject_inner, _ := idx.WOFPolygonToPolyclip(&inner)
+
+					xor := clipping_outer.Construct(polyclip.XOR, *subject_inner)
+					idx.Logger.Debug("XOR of clipping (outer poly) and subject (inner poly %d) %d", i, len(xor))
+
+					if len(xor) > 0 {
+					   intersects = true
+					}
+			   }
+
+			}
+		
+			idx.Logger.Debug("does clipping poly %d intersect subject: %t", c, intersects)
 
 			if intersects {
 				break
