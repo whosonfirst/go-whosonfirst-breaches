@@ -91,16 +91,39 @@ func (idx *Index) Intersects(feature_polys []*geojson.WOFPolygon, candidate *geo
 			subject, _ := idx.WOFPolygonToPolyclip(&c.OuterRing)
 			i := subject.Construct(polyclip.INTERSECTION, *clipping)
 
-			idx.Logger.Debug("%v", i)
+			idx.Logger.Debug("INTERSECTION %v", len(i))
 
 			if len(i) > 0 {
 				intersects = true
+			}
+
+			// If the candidate does intersect check to make sure that the
+			// candidate is not also contained by any of the interior rings
+
+			if intersects && len(c.InteriorRings) > 0 {
+
+				intersects = false
+
+				idx.Logger.Debug("TEST INTERIOR RINGS FOR CANDIDATE %d", len(c.InteriorRings))
+
+				for _, inner := range c.InteriorRings {
+
+					inner_subject, _ := idx.WOFPolygonToPolyclip(&inner)
+
+					i := inner_subject.Construct(polyclip.INTERSECTION, *clipping)
+					idx.Logger.Debug("INTERSECTION %d", len(i))
+
+					if len(i) > 0 {
+						intersects = true
+						break
+					}
+				}
+			}
+
+			if intersects {
 				break
 			}
 		}
-
-		// If the candidate does intersect check to make sure that the
-		// candidate is not also contained by any of the interior rings
 
 		if intersects {
 			break
