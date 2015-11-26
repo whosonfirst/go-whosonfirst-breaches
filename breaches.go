@@ -47,6 +47,8 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 
 	if len(results) > 0 {
 
+		t1 := time.Now()
+
 		clipping_polys := feature.GeomToPolygons()
 		idx.Logger.Debug("compare %d polys from clipping against %d possible subjects", len(clipping_polys), len(results))
 
@@ -97,6 +99,8 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 			}
 		}
 
+		t2 := time.Since(t1)
+		idx.Logger.Debug("time to test %d results: %v", pending, t2)
 	}
 
 	return breaches, nil
@@ -200,12 +204,11 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 			}
 		}
 
-		idx.Logger.Debug("does clipping poly %d intersect subject (%d/%d iterations): %t", c, iters, possible, intersects)
+		idx.Logger.Debug("DOES clipping poly %d intersect subject (%d/%d iterations): %t", c, iters, possible, intersects)
 
 		if intersects {
 			break
 		}
-
 	}
 
 	return intersects, nil

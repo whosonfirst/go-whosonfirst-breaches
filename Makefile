@@ -29,3 +29,4 @@ mtl:
 
 lengua:
 	./bin/wof-clipping -data /usr/local/mapzen/whosonfirst-data/data/ -clipping 102112179 -subject 85887469	
+	./bin/wof-clipping -data /usr/local/mapzen/whosonfirst-data/data/ -subject 102112179 -clipping 85887469	
