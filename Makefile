@@ -20,9 +20,12 @@ bin:	self fmt
 	go build -o bin/wof-breaches cmd/wof-breaches.go
 	go build -o bin/wof-clipping cmd/wof-clipping.go
 
-ca-us:
+ca:
 	./bin/wof-clipping -data /usr/local/mapzen/whosonfirst-data/data/ -clipping 85633041 -subject 85633793
 
 mtl:
 	./bin/wof-clipping -data /usr/local/mapzen/whosonfirst-data/data/ -subject 101736451 -clipping 101736545
 	./bin/wof-clipping -data /usr/local/mapzen/whosonfirst-data/data/ -clipping 101736451 -subject 101736545
+
+lengua:
+	./bin/wof-clipping -data /usr/local/mapzen/whosonfirst-data/data/ -clipping 102112179 -subject 85887469	
