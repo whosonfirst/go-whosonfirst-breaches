@@ -119,94 +119,112 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 
 	intersects := false
 
+	clipping_ch := make(chan bool, len(clipping_polys))
+
 	for c, clipping_poly := range clipping_polys {
 
 		idx.Logger.Debug("TEST clipping poly %d (which has %d interior rings) against %d subject polys", c, len(clipping_poly.InteriorRings), len(subject_polys))
 
-		clipping_outer, _ := idx.WOFPolygonToPolyclip(&clipping_poly.OuterRing)
+		clipping_intersects := false
 
-		ch := make(chan bool, len(subject_polys))
+		// sudo move me to a discrete function
 
-		for s, subject_poly := range subject_polys {
+		go func(c int, clipping_poly *geojson.WOFPolygon, subject_polys []*geojson.WOFPolygon) {
 
-			go func(subject_poly *geojson.WOFPolygon, clipping_poly *geojson.WOFPolygon, clipping_outer *polyclip.Polygon, c int, s int) {
+			clipping_outer, _ := idx.WOFPolygonToPolyclip(&clipping_poly.OuterRing)
 
-				t1 := time.Now()
+			subject_ch := make(chan bool, len(subject_polys))
 
-				_intersects := false
+			for s, subject_poly := range subject_polys {
 
-				idx.Logger.Debug("TEST subject poly %d against clipping poly %d", s, c)
+				// sudo move me to a discrete function
 
-				subject_outer, _ := idx.WOFPolygonToPolyclip(&subject_poly.OuterRing)
-				intersection := subject_outer.Construct(polyclip.INTERSECTION, *clipping_outer)
+				go func(subject_poly *geojson.WOFPolygon, clipping_poly *geojson.WOFPolygon, clipping_outer *polyclip.Polygon, c int, s int) {
 
-				// idx.Logger.Debug("INTERSECTION of clipping (outer poly) %d and subject (outer poly) %d: %v", c, s, len(intersection))
+					t1 := time.Now()
 
-				if len(intersection) > 0 {
-					_intersects = true
-				}
+					subject_intersects := false
 
-				if _intersects && len(subject_poly.InteriorRings) > 0 {
+					idx.Logger.Debug("TEST subject poly %d against clipping poly %d", s, c)
 
-					_intersects = false
+					subject_outer, _ := idx.WOFPolygonToPolyclip(&subject_poly.OuterRing)
+					intersection := subject_outer.Construct(polyclip.INTERSECTION, *clipping_outer)
 
-					for _, inner := range subject_poly.InteriorRings {
+					// idx.Logger.Debug("INTERSECTION of clipping (outer poly) %d and subject (outer poly) %d: %v", c, s, len(intersection))
 
-						subject_inner, _ := idx.WOFPolygonToPolyclip(&inner)
-
-						xor := clipping_outer.Construct(polyclip.XOR, *subject_inner)
-						// idx.Logger.Debug("XOR of clipping (outer poly %d) and subject (inner poly %d:%d) %d", c, s, i, len(xor))
-
-						if len(xor) > 0 {
-							_intersects = true
-						}
+					if len(intersection) > 0 {
+						subject_intersects = true
 					}
 
-				}
+					if subject_intersects && len(subject_poly.InteriorRings) > 0 {
 
-				if _intersects && len(clipping_poly.InteriorRings) > 0 {
+						subject_intersects = false
 
-					_intersects = false
+						for _, inner := range subject_poly.InteriorRings {
 
-					for _, inner := range clipping_poly.InteriorRings {
+							subject_inner, _ := idx.WOFPolygonToPolyclip(&inner)
 
-						clipping_inner, _ := idx.WOFPolygonToPolyclip(&inner)
+							xor := clipping_outer.Construct(polyclip.XOR, *subject_inner)
+							// idx.Logger.Debug("XOR of clipping (outer poly %d) and subject (inner poly %d:%d) %d", c, s, i, len(xor))
 
-						xor := subject_outer.Construct(polyclip.XOR, *clipping_inner)
-						// idx.Logger.Debug("XOR of clipping (inner poly %d:%d) and subject (outer poly %d) %d", c, i, s, len(xor))
-
-						if len(xor) > 0 {
-							_intersects = true
+							if len(xor) > 0 {
+								subject_intersects = true
+							}
 						}
+
 					}
 
-				}
+					if subject_intersects && len(clipping_poly.InteriorRings) > 0 {
 
-				t2 := time.Since(t1)
-				idx.Logger.Debug("TIME to calculate intersection for clipping poly %d / subject poly %d : %v (%t)", c, s, t2, _intersects)
+						subject_intersects = false
 
-				ch <- _intersects
+						for _, inner := range clipping_poly.InteriorRings {
 
-			}(subject_poly, clipping_poly, clipping_outer, c, s)
+							clipping_inner, _ := idx.WOFPolygonToPolyclip(&inner)
 
-		}
+							xor := subject_outer.Construct(polyclip.XOR, *clipping_inner)
+							// idx.Logger.Debug("XOR of clipping (inner poly %d:%d) and subject (outer poly %d) %d", c, i, s, len(xor))
 
-		possible := len(subject_polys)
-		var iters int
+							if len(xor) > 0 {
+								subject_intersects = true
+							}
+						}
 
-		for iters = 0; iters < possible; iters++ {
+					}
 
-			_intersects := <-ch
+					t2 := time.Since(t1)
+					idx.Logger.Debug("TIME to calculate intersection for clipping poly %d / subject poly %d : %v (%t)", c, s, t2, subject_intersects)
 
-			if _intersects {
-				intersects = true
-				break
+					subject_ch <- subject_intersects
+
+				}(subject_poly, clipping_poly, clipping_outer, c, s)
+
 			}
-		}
 
-		idx.Logger.Debug("DOES clipping poly %d intersect subject (%d/%d iterations): %t", c, iters, possible, intersects)
+			possible := len(subject_polys)
+			var iters int
 
-		if intersects {
+			for iters = 0; iters < possible; iters++ {
+
+				subject_intersects := <-subject_ch
+
+				if subject_intersects {
+					clipping_intersects = true
+					break
+				}
+			}
+
+			clipping_ch <- clipping_intersects
+
+		}(c, clipping_poly, subject_polys)
+	}
+
+	for range clipping_polys {
+
+		clipping_intersects := <-clipping_ch
+
+		if clipping_intersects {
+			intersects = true
 			break
 		}
 	}
