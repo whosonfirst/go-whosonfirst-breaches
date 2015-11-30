@@ -42,7 +42,6 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 	}
 
 	breaches := make([]*geojson.WOFSpatial, 0)
-
 	results := idx.GetIntersectsByRect(clipping.Bounds())
 
 	if len(results) > 0 {
@@ -52,55 +51,83 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 		clipping_polys := feature.GeomToPolygons()
 		idx.Logger.Debug("compare %d polys from clipping against %d possible subjects", len(clipping_polys), len(results))
 
-		inflated := idx.InflateSpatialResults(results)
+		// See what's going on here? We are *not* relying on the standard Inflate method
+		// but rather bucketing all the WOFSpatials by their WOF ID (this is because the
+		// (WOF) rtree package indexes the bounding boxes of individual polygons on the
+		// geom rather than the bounding box of the set of polygons) which we we will
+		// loop over below (20151130/thisisaaronland)
 
-		ch := make(chan Intersection, len(inflated))
-		pending := 0
+		inflated := make(map[int][]*geojson.WOFSpatial)
 
-		for _, subject := range inflated {
+		for _, r := range results {
 
-			if subject.Id == feature.WOFId() {
+			wof := r.(*geojson.WOFSpatial)
+			wofid := wof.Id
+
+			_, ok := inflated[wofid]
+
+			possible := make([]*geojson.WOFSpatial, 0)
+
+			if ok {
+				possible = inflated[wofid]
+			}
+
+			possible = append(possible, wof)
+			inflated[wofid] = possible
+		}
+
+		for wofid, possible := range inflated {
+
+			if wofid == feature.WOFId() {
+				idx.Logger.Debug("%d can not breach itself, skipping", wofid)
 				continue
 			}
 
-			go func(clipping_polys []*geojson.WOFPolygon, subject *geojson.WOFSpatial) {
+			// Despite the notes about goroutines and yak-shaving below this is probably
+			// a pretty good place to do things concurrently (21051130/thisisaaronland)
 
-				subject_polys, err := idx.LoadPolygons(subject)
+			subject_polys, err := idx.LoadPolygons(possible[0])
 
-				if err != nil {
-					idx.Logger.Warning("Unable to load polygons for ID %d, because %v", subject.Id, err)
-					ch <- Intersection{nil, false}
+			if err != nil {
+				idx.Logger.Warning("Unable to load polygons for ID %d, because %v", wofid, err)
+				continue
+			}
+
+			idx.Logger.Info("testing %d with %d possible candidates", wofid, len(possible))
+
+			// Note to self: it turns out that goroutine-ing these operations is yak-shaving
+			// and often slower (20151130/thisisaaronland)
+
+			for i, subject := range possible {
+
+				idx.Logger.Debug("testing %d (offset %d) with candidate %d", wofid, subject.Offset, i)
+
+				test_polys := make([]*geojson.WOFPolygon, 0)
+
+				if subject.Offset == -1 {
+					test_polys = subject_polys
+				} else {
+					test_polys = append(test_polys, subject_polys[subject.Offset])
 				}
 
-				intersects, err := idx.Intersects(clipping_polys, subject_polys)
+				intersects, err := idx.Intersects(clipping_polys, test_polys)
 
 				if err != nil {
 					idx.Logger.Error("Failed to determine intersection, because %v", err)
-					ch <- Intersection{nil, false}
+					continue
 				}
 
-				if err != nil {
-					ch <- Intersection{nil, false}
+				if intersects {
+					breaches = append(breaches, subject)
+					idx.Logger.Debug("determined that %d breaches after %d/%d iterations", wofid, i, len(possible))
+					break
 				}
 
-				ch <- Intersection{subject, intersects}
-
-			}(clipping_polys, subject)
-
-			pending += 1
-		}
-
-		for j := 0; j < pending; j++ {
-
-			i := <-ch
-
-			if i.intersects {
-				breaches = append(breaches, i.subject)
 			}
 		}
 
 		t2 := time.Since(t1)
-		idx.Logger.Debug("time to test %d results: %v", pending, t2)
+		idx.Logger.Debug("time to test %d possible results: %v", len(results), t2)
 	}
 
 	return breaches, nil
