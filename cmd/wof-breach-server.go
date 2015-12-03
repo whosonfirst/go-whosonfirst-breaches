@@ -1,7 +1,7 @@
 package main
 
 import (
-       "encoding/json"
+	"encoding/json"
 	"flag"
 	"fmt"
 	breaches "github.com/whosonfirst/go-whosonfirst-breaches"
@@ -14,6 +14,11 @@ import (
 )
 
 func main() {
+
+	/*
+	   This still lacks metrics collection of strict placetype checking
+	   (20151203/thisisaaronland)
+	*/
 
 	var port = flag.Int("port", 9988, "The port number to listen for requests on")
 	var data = flag.String("data", "", "The data directory where WOF data lives, required")
@@ -87,7 +92,7 @@ func main() {
 			http.Error(rsp, "Invalid WOF ID", http.StatusBadRequest)
 			return
 		}
-		
+
 		results, err := idx.Breaches(feature)
 
 		if err != nil {
