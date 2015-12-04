@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"sync/atomic"
+	"time"
 )
 
 func main() {
@@ -67,6 +69,11 @@ func main() {
 		idx.IndexMetaFile(meta)
 	}
 
+	logger.Info("indexing meta files complete")
+
+	var lookups int64
+	lookups = 0
+
 	handler := func(rsp http.ResponseWriter, req *http.Request) {
 
 		query := req.URL.Query()
@@ -93,12 +100,24 @@ func main() {
 			return
 		}
 
+		logger.Info("looking up %d (%d)", feature.WOFId(), lookups)
+
+		t1 := time.Now()
+		atomic.AddInt64(&lookups, 1)
+
 		results, err := idx.Breaches(feature)
+
+		atomic.AddInt64(&lookups, -1)
+		t2 := time.Since(t1)
+
+		logger.Info("time to lookup %d : %v", feature.WOFId(), t2)
 
 		if err != nil {
 			http.Error(rsp, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		logger.Info("%d results breach %d", len(results), feature.WOFId())
 
 		js, err := json.Marshal(results)
 
