@@ -42,7 +42,10 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 	}
 
 	breaches := make([]*geojson.WOFSpatial, 0)
-	results := idx.GetIntersectsByRect(clipping.Bounds())
+	bounds := clipping.Bounds()
+	results := idx.GetIntersectsByRect(bounds)
+
+	idx.Logger.Info("possible results for %v : %d", bounds, len(results))
 
 	if len(results) > 0 {
 
@@ -93,7 +96,7 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 				continue
 			}
 
-			idx.Logger.Info("testing %d with %d possible candidates", wofid, len(possible))
+			idx.Logger.Debug("testing %d with %d possible candidates", wofid, len(possible))
 
 			// Note to self: it turns out that goroutine-ing these operations is yak-shaving
 			// and often slower (20151130/thisisaaronland)
