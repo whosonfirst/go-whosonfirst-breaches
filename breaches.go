@@ -143,9 +143,9 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 		    	 OR (union) - create regions where either subject or clip polygons (or both) are filled
 			 NOT (difference) - create regions where subject polygons are filled except where clip polygons are filled
 		    	 XOR (exclusive or) - create regions where either subject or clip polygons are filled but not where both are filled
-	*/
 
-	// https://godoc.org/github.com/akavel/polyclip-go#Op
+			 - https://godoc.org/github.com/akavel/polyclip-go#Op
+	*/
 
 	intersects := false
 
