@@ -45,7 +45,7 @@ func (idx *Index) Breaches(feature *geojson.WOFFeature) ([]*geojson.WOFSpatial, 
 	bounds := clipping.Bounds()
 	results := idx.GetIntersectsByRect(bounds)
 
-	idx.Logger.Info("possible results for %v : %d", bounds, len(results))
+	// idx.Logger.Info("possible results for %v : %d", bounds, len(results))
 
 	if len(results) > 0 {
 
@@ -159,7 +159,7 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 
 		for s, subject_poly := range subject_polys {
 
-			go func(subject_poly *geojson.WOFPolygon, clipping_poly *geojson.WOFPolygon, clipping_outer *polyclip.Polygon, c int, s int) {
+			go func(subject_poly *geojson.WOFPolygon, clipping_poly *geojson.WOFPolygon, clipping_outer *polyclip.Polygon, c int, s int, ch chan bool) {
 
 				t1 := time.Now()
 
@@ -170,7 +170,7 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 				subject_outer, _ := idx.WOFPolygonToPolyclip(&subject_poly.OuterRing)
 				intersection := subject_outer.Construct(polyclip.INTERSECTION, *clipping_outer)
 
-				// idx.Logger.Debug("INTERSECTION of clipping (outer poly) %d and subject (outer poly) %d: %v", c, s, len(intersection))
+				idx.Logger.Debug("INTERSECTION of clipping (outer poly) %d and subject (outer poly) %d: %v", c, s, len(intersection))
 
 				if len(intersection) > 0 {
 					_intersects = true
@@ -180,12 +180,12 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 
 					_intersects = false
 
-					for _, inner := range subject_poly.InteriorRings {
+					for i, inner := range subject_poly.InteriorRings {
 
 						subject_inner, _ := idx.WOFPolygonToPolyclip(&inner)
 
 						xor := clipping_outer.Construct(polyclip.XOR, *subject_inner)
-						// idx.Logger.Debug("XOR of clipping (outer poly %d) and subject (inner poly %d:%d) %d", c, s, i, len(xor))
+						idx.Logger.Debug("XOR of clipping (outer poly %d) and subject (inner poly %d:%d) %d", c, s, i, len(xor))
 
 						if len(xor) > 0 {
 							_intersects = true
@@ -198,12 +198,12 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 
 					_intersects = false
 
-					for _, inner := range clipping_poly.InteriorRings {
+					for i, inner := range clipping_poly.InteriorRings {
 
 						clipping_inner, _ := idx.WOFPolygonToPolyclip(&inner)
 
 						xor := subject_outer.Construct(polyclip.XOR, *clipping_inner)
-						// idx.Logger.Debug("XOR of clipping (inner poly %d:%d) and subject (outer poly %d) %d", c, i, s, len(xor))
+						idx.Logger.Debug("XOR of clipping (inner poly %d:%d) and subject (outer poly %d) %d", c, i, s, len(xor))
 
 						if len(xor) > 0 {
 							_intersects = true
@@ -217,7 +217,7 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 
 				ch <- _intersects
 
-			}(subject_poly, clipping_poly, clipping_outer, c, s)
+			}(subject_poly, clipping_poly, clipping_outer, c, s, ch)
 
 		}
 
@@ -226,10 +226,19 @@ func (idx *Index) Intersects(clipping_polys []*geojson.WOFPolygon, subject_polys
 
 		for iters = 0; iters < possible; iters++ {
 
-			_intersects := <-ch
+			select {
+			case _intersects := <-ch:
 
-			if _intersects {
-				intersects = true
+				if _intersects {
+					intersects = true
+					break
+				}
+
+			// This is a band-aid until we can find a proper solution for this:
+			// https://github.com/whosonfirst/go-whosonfirst-breaches/issues/1
+
+			case <-time.After(5 * time.Second):
+				idx.Logger.Warning("TIMEOUT determining whether clipping poly %d intersect subject (%d/%d iterations): %t", c, iters, possible, intersects)
 				break
 			}
 		}
